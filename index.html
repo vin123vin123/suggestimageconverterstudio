@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Converter Studio</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 500px; margin: 0 auto; }
+    h1 { text-align: center; color: #1a73e8; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    input[type="file"] { width: 100%; margin-bottom: 15px; }
+    button { width: 100%; background: #1a73e8; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; margin-bottom: 10px; font-size: 1rem; cursor: pointer; }
+    button.ascii-btn { background: #34a853; }
+    #previewContainer { text-align: center; display: none; }
+    #imageViewer { max-width: 100%; max-height: 250px; border-radius: 8px; margin: 0 auto; display: block; }
+    #asciiViewer { white-space: pre; font-family: monospace; font-size: 8px; letter-spacing: 4px; line-height: 8px; background: black; color: #00ff00; padding: 10px; border-radius: 8px; overflow-x: auto; text-align: left; display: none; max-height: 300px; }
+    .links-box { display: none; background: #e8f0fe; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: center; }
+    .links-box a { color: #1a73e8; font-weight: bold; text-decoration: none; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+
+  <h1>📸 Cloud Image Studio</h1>
+  
+  <div class="card">
+    <input type="file" id="fileInput" accept="image/*">
+    <button id="grayViewBtn">1. View Grayscale Preview</button>
+    <button id="asciiViewBtn" class="ascii-btn">2. View ASCII Art Preview</button>
+  </div>
+
+  <div id="previewContainer" class="card">
+    <h3>✨ Live Preview Panel</h3>
+    <img id="imageViewer" src="" style="display:none;">
+    <div id="asciiViewer"></div>
+    <button id="saveDbBtn" style="background:#f4b400; margin-top:15px; display:none;">💾 Save to Database</button>
+    
+    <div id="linksBox" class="links-box">
+      <p>🎉 Saved to MongoDB! This link deletes itself upon download:</p>
+      <div id="downloadLinks"></div>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const grayViewBtn = document.getElementById('grayViewBtn');
+    const asciiViewBtn = document.getElementById('asciiViewBtn');
+    const previewContainer = document.getElementById('previewContainer');
+    const imageViewer = document.getElementById('imageViewer');
+    const asciiViewer = document.getElementById('asciiViewer');
+    const saveDbBtn = document.getElementById('saveDbBtn');
+    const linksBox = document.getElementById('linksBox');
+    const downloadLinks = document.getElementById('downloadLinks');
+    let currentMode = '';
+
+    function showContainer() {
+      previewContainer.style.display = 'block';
+      imageViewer.style.display = 'none';
+      asciiViewer.style.display = 'none';
+      saveDbBtn.style.display = 'none';
+      linksBox.style.display = 'none';
+    }
+
+    grayViewBtn.addEventListener('click', () => {
+      if (fileInput.files.length === 0) return alert('Pick an image first!');
+      showContainer();
+      currentMode = 'grayscale';
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        imageViewer.src = e.target.result;
+        imageViewer.style.filter = 'grayscale(100%)';
+        imageViewer.style.display = 'block';
+        saveDbBtn.style.display = 'block';
+      };
+      reader.readAsDataURL(fileInput.files[0]);
+    });
+
+    asciiViewBtn.addEventListener('click', async () => {
+      if (fileInput.files.length === 0) return alert('Pick an image first!');
+      showContainer();
+      currentMode = 'ascii';
+      asciiViewer.innerText = 'Creating text art...';
+      asciiViewer.style.display = 'block';
+
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]); // 🛠️ FIXED: Added array index 0
+
+      try {
+        const res = await fetch('/preview-ascii', { method: 'POST', body: formData });
+        const data = await res.json();
+        if(data.ascii) {
+          asciiViewer.innerText = data.ascii;
+          saveDbBtn.style.display = 'block';
+        } else {
+          asciiViewer.innerText = 'Error processing image syntax.';
+        }
+      } catch { alert('Server error'); }
+    });
+
+    saveDbBtn.addEventListener('click', async () => {
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]); // 🛠️ FIXED: Added array index 0
+      formData.append('mode', currentMode);
+      saveDbBtn.innerText = 'Uploading to MongoDB...';
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const result = await res.json();
+        if (result.downloadUrl) {
+          downloadLinks.innerHTML = `<a href="${result.downloadUrl}">⬇️ Download & Delete from DB</a>`;
+          linksBox.style.display = 'block';
+          saveDbBtn.style.display = 'none';
+        } else {
+          alert('Database upload failed: ' + result.error);
+        }
+      } catch { alert('Upload network failed'); }
+      finally { saveDbBtn.innerText = '💾 Save to Database'; }
+    });
+  </script>
+</body>
+</html>
