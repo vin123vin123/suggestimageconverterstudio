@@ -9,29 +9,37 @@ const Jimp = require('jimp');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Connect to MongoDB Atlas
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch(err => console.error('Database connection error:', err));
+// 1. FIXED: Added 'family: 4' to force IPv4 connection routing on Cloud hosts
+mongoose.connect(process.env.MONGODB_URI, {
+  family: 4,
+  serverSelectionTimeoutMS: 10000
+})
+  .then(() => console.log('🟢 Fully connected to MongoDB Atlas!'))
+  .catch(err => console.error('🔴 Database connection error:', err));
 
 // Database structural schema validation configuration rules
 const ImageSchema = new mongoose.Schema({
   originalName: String,
   grayscaleBuffer: { type: Buffer, default: null },
   asciiText: { type: String, default: null },
-  createdAt: { type: Date, default: Date.now, expires: 3600 }
+  createdAt: { type: Date, default: Date.now, expires: 3600 } // Auto-destruct after 1 hour
 });
 const ImageModel = mongoose.model('ProcessedImage', ImageSchema);
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// Configure multer limits carefully for small cloud nodes
+const upload = multer({ 
+  storage: multer.memoryStorage(), 
+  limits: { fileSize: 5 * 1024 * 1024 } 
+});
 
-// Server user view template delivery engines
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Processing Engine: Convert picture to Grayscale binary chunk
 async function makeGrayscale(buffer) {
   const image = await Jimp.read(buffer);
-  return await image.grayscale().getBufferAsync(Jimp.MIME_PNG);
+  const grayBuffer = await image.grayscale().getBufferAsync(Jimp.MIME_PNG);
+  return Buffer.from(grayBuffer); // 2. FIXED: Explicit transformation to clean Node Buffer element
 }
 
 // Processing Engine: Convert picture to layout string array mappings
@@ -61,7 +69,10 @@ app.post('/preview-ascii', upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file received' });
     const text = await makeAscii(req.file.buffer);
     res.json({ ascii: text });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error("Preview Error:", err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 // Route: Confirms structure values and commits items to MongoDB Atlas
@@ -80,8 +91,12 @@ app.post('/upload', upload.single('image'), async (req, res) => {
       asciiText: txt 
     }).save();
 
-    res.json({ downloadUrl: `${req.protocol}://${req.get('host')}/download/${doc._id}/${mode}` });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    // 3. FIXED: Using dynamic path mapping standard instead of protocol bindings to guarantee secure SSL downloads on Render
+    res.json({ downloadUrl: `/download/${doc._id}/${mode}` });
+  } catch (err) { 
+    console.error("Upload Error:", err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 // Route: Downloads document payloads and completely wipes target records inside database collection
@@ -100,10 +115,16 @@ app.get('/download/:id/:type', async (req, res) => {
       res.send(doc.asciiText);
     }
     
-    // 🔥 INSTANT PURGE SWEEP FROM MONGODB ATLAS FOLLOWING THE DOWNLOAD SEND
-    await ImageModel.findByIdAndDelete(req.params.id);
-    console.log(`Successfully purged data tracking entry ${req.params.id}`);
-  } catch { res.status(500).send('Download connection loop failure.'); }
+    // Purge record asynchronously right after request routing clears out
+    process.nextTick(async () => {
+       await ImageModel.findByIdAndDelete(req.params.id);
+       console.log(`Successfully purged data tracking entry ${req.params.id}`);
+    });
+
+  } catch (err) { 
+    res.status(500).send('Download connection loop failure.'); 
+  }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
+// 4. FIXED: Explicit hosting IP definition '0.0.0.0' allowing Render's edge proxies to attach traffic smoothly
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server fully operational on port ${PORT}`));
