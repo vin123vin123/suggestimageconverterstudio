@@ -106,4 +106,4 @@ app.get('/download/:id/:type', async (req, res) => {
   } catch { res.status(500).send('Download connection loop failure.'); }
 });
 
-app.listen(PORT, () => console.log(`Running cloud server engine on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
